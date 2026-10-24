@@ -43,7 +43,8 @@ jobs:
         id: upd
         env:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
-        run: python tools/update_month.py /tmp/dec/index.html
+        run: |
+          python tools/update_month.py /tmp/dec/index.html 2> /tmp/err.txt || { echo "::error title=update_month::$(tail -c 600 /tmp/err.txt | tr '\n' ' ')"; exit 1; }
       - name: Re-encrypt the page
         if: steps.upd.outputs.changed == 'true'
         env:
