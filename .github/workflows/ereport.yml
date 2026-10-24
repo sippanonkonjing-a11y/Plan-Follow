@@ -37,7 +37,8 @@ jobs:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
         run: |
           test -n "$APP_PASSWORD" || { echo "::error::Add the APP_PASSWORD secret in Settings → Secrets and variables → Actions"; exit 1; }
-          npx -y staticrypt@3.5.4 index.html -p "$APP_PASSWORD" --decrypt -d /tmp/dec
+          npx -y staticrypt@3.5.4 index.html -p "$APP_PASSWORD" --decrypt --salt 396281142d1ad3157494c4075d3f2196 -d /tmp/dec
+          test -s /tmp/dec/index.html || { echo "::error::Could not decrypt index.html. Check that the APP_PASSWORD secret matches the app password."; exit 1; }
       - name: Read reports and update month data
         if: steps.inbox.outputs.has == 'true'
         id: upd
