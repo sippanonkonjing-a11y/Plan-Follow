@@ -1,0 +1,67 @@
+name: Update month data from E-REPORT
+
+on:
+  push:
+    branches: [main]
+    paths: ['inbox/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: ereport
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install PDF reader
+        run: pip install pypdf==6.17.0
+      - name: Check for new reports
+        id: inbox
+        run: |
+          if ls inbox/*.bin >/dev/null 2>&1; then echo "has=true" >> "$GITHUB_OUTPUT"; else echo "has=false" >> "$GITHUB_OUTPUT"; echo "inbox is empty"; fi
+      - name: Decrypt the current app page
+        if: steps.inbox.outputs.has == 'true'
+        env:
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+        run: |
+          test -n "$APP_PASSWORD" || { echo "::error::Add the APP_PASSWORD secret in Settings → Secrets and variables → Actions"; exit 1; }
+          npx -y staticrypt@3.5.4 index.html -p "$APP_PASSWORD" --decrypt -d /tmp/dec
+      - name: Read reports and update month data
+        if: steps.inbox.outputs.has == 'true'
+        id: upd
+        env:
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+        run: python tools/update_month.py /tmp/dec/index.html
+      - name: Re-encrypt the page
+        if: steps.upd.outputs.changed == 'true'
+        env:
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+        run: |
+          tools/encrypt_page.sh /tmp/dec/index.html /tmp/enc
+          cp /tmp/enc/index.html index.html
+      - name: Commit
+        if: steps.inbox.outputs.has == 'true'
+        run: |
+          git config user.name "plan-follow-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -q --cached inbox/*.bin && rm -f inbox/*.bin
+          git add index.html
+          git commit -q -m "Update month data from E-REPORT" || { echo "nothing to commit"; exit 0; }
+          for i in 1 2 3; do git pull -q --rebase origin main && git push -q origin HEAD:main && break; sleep 5; done
+      - name: Rebuild the site
+        if: steps.upd.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" || echo "Pages will rebuild on its own"
