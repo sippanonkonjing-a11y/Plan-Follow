@@ -1,6 +1,6 @@
 """Decrypt reports in inbox/, parse them, and write the month data into the decrypted app page.
 Usage: python update_month.py <decrypted app.html>   (APP_PASSWORD in the environment)"""
-import sys, os, re, json, glob, tempfile
+import sys, os, re, json, glob, tempfile, datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pfcrypt, ereport_parse
 
@@ -22,7 +22,8 @@ for f in sorted(glob.glob('inbox/*.bin')):
     if old and old.get('asof') and d['asof'] and d['asof'] < old['asof']:
         print(f'{f}: older than current data for group {d["group"]} ({d["asof"]} < {old["asof"]}), skipped')
     else:
-        month[d['group']] = {'asof': d['asof'], 'rows': [[r['unit'], r['dF'], r['dC'], r['sF'], r['sC'], r['pF'], r['pC'], r['pc']] for r in d['rows']], 'total': d['total']}
+        month[d['group']] = {'asof': d['asof'], 'rows': [[r['unit'], r['dF'], r['dC'], r['sF'], r['sC'], r['pF'], r['pC'], r['pc']] for r in d['rows']], 'total': d['total'],
+                              'upd': datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7))).strftime('%Y-%m-%dT%H:%M')}
         changed = True
         print(f'{f}: group {d["group"]} as of {d["asof"]}, {len(d["rows"])} units, PC {d["total"][6]:,.2f}')
     done.append(f)
