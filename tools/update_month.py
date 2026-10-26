@@ -9,6 +9,10 @@ html = open(app, encoding='utf-8').read()
 m = re.search(r'/\*MONTH_DATA_START\*/\s*const MONTH=(.*?);\s*/\*MONTH_DATA_END\*/', html, re.S)
 if not m: sys.exit('month data markers not found in the app page')
 month = json.loads(m.group(1))
+HRE = r'/\*HIST_DATA_START\*/\s*const HIST=(.*?);\s*/\*HIST_DATA_END\*/'
+hm = re.search(HRE, html, re.S)
+hist = json.loads(hm.group(1)) if hm else None
+hist_changed = False
 
 done, changed = [], False
 for f in sorted(glob.glob('inbox/*.bin')):
@@ -18,6 +22,12 @@ for f in sorted(glob.glob('inbox/*.bin')):
         pdf = os.path.join(td, name)
         open(pdf, 'wb').write(pfcrypt.decrypt(open(f, 'rb').read(), pw))
         d = ereport_parse.parse(pdf)
+    if hist is not None and d['asof']:
+        # daily history per group: date -> [PC, cases sent, cases approved, FYP sent, FYP approved, {unit: PC}]
+        t = d['total']
+        hist.setdefault(d['group'], {})[d['asof']] = [round(t[6], 2), t[3], t[5], t[2], t[4], {r['unit']: round(r['pc'], 2) for r in d['rows']}]
+        hist[d['group']] = dict(sorted(hist[d['group']].items())[-150:])
+        hist_changed = True
     old = month.get(d['group'])
     if old and old.get('asof') and d['asof'] and d['asof'] < old['asof']:
         print(f'{f}: older than current data for group {d["group"]} ({d["asof"]} < {old["asof"]}), skipped')
@@ -35,5 +45,10 @@ if changed:
         print(f'group {g} is from an earlier month, removed until its new report arrives'); del month[g]
     block = '/*MONTH_DATA_START*/\nconst MONTH=' + json.dumps(month, ensure_ascii=False, separators=(',', ':')) + ';\n/*MONTH_DATA_END*/'
     html = html[:m.start()] + block + html[m.end():]
+if hist_changed:
+    hm = re.search(HRE, html, re.S)
+    html = html[:hm.start()] + '/*HIST_DATA_START*/\nconst HIST=' + json.dumps(hist, ensure_ascii=False, separators=(',', ':')) + ';\n/*HIST_DATA_END*/' + html[hm.end():]
+    changed = True
+if changed:
     open(app, 'w', encoding='utf-8').write(html)
 open(os.environ.get('GITHUB_OUTPUT', os.devnull), 'a').write(f'changed={"true" if changed else "false"}\nprocessed={" ".join(done)}\n')
